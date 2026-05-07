@@ -34,6 +34,8 @@ title: 主页
 
 [__循环神经网络__](RNN.md)
 
+[__循环神经网络改进__](poem_generation_rnn_improved.md)
+
 [__注意力机制__](attention.md)
 
 [__高斯混合__](gaussian_mixture.md)
