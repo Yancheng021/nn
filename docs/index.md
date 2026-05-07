@@ -20,6 +20,8 @@ title: 主页
 
 [__线性回归改进__](linear_regression_improved.md)
 
+[__线性回归修复__](linear_regression_fix.md) - 修复偏置未更新bug
+
 [__softmax回归__](softmax_regression.md)
 
 [__线性回归和softmax回归改进__](softmax_regression_improved.md)
