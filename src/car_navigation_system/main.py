@@ -11,6 +11,79 @@ from collections import deque
 import random
 
 
+class TrafficLightDetector:
+    """交通灯检测器"""
+    
+    def __init__(self, world, vehicle):
+        self.world = world
+        self.vehicle = vehicle
+        self.detection_distance = 15.0  # 检测距离（米）- 减小距离让车辆停得更近
+        self.stop_distance = 5.0  # 停车距离（离停止线的距离）
+        
+    def get_traffic_light_state(self):
+        """获取前方交通灯状态（只检测当前行驶道路的交通灯）"""
+        vehicle_location = self.vehicle.get_location()
+        vehicle_transform = self.vehicle.get_transform()
+        
+        # 获取车辆朝向
+        vehicle_yaw = math.radians(vehicle_transform.rotation.yaw)
+        
+        # 获取所有交通灯
+        traffic_lights = self.world.get_actors().filter('traffic.traffic_light')
+        
+        min_distance = float('inf')
+        closest_light = None
+        
+        for light in traffic_lights:
+            if not light or not light.is_alive:
+                continue
+            
+            # 获取交通灯位置
+            light_location = light.get_location()
+            
+            # 计算到车辆的距离
+            distance = vehicle_location.distance(light_location)
+            
+            if distance > self.detection_distance:
+                continue
+            
+            # 计算交通灯相对于车辆前方的角度
+            dx = light_location.x - vehicle_location.x
+            dy = light_location.y - vehicle_location.y
+            
+            # 将交通灯位置转换到车辆坐标系
+            local_x = dx * math.cos(vehicle_yaw) + dy * math.sin(vehicle_yaw)
+            local_y = -dx * math.sin(vehicle_yaw) + dy * math.cos(vehicle_yaw)
+            
+            # 只检测车辆正前方的交通灯（local_x > 0）且在同一侧道路（local_y接近0）
+            # 使用更严格的判断：交通灯必须在车辆正前方很小的角度范围内
+            if local_x > 0 and abs(local_y) < 3.0:  # 只检测同一车道的交通灯
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_light = light
+        
+        if closest_light:
+            state = closest_light.get_state()
+            return state, min_distance
+        
+        return None, None  # 没有发现属于当前道路的交通灯
+    
+    def should_stop(self):
+        """判断是否需要停车"""
+        state, distance = self.get_traffic_light_state()
+        
+        if state == carla.TrafficLightState.Red:
+            return True, distance
+        elif state == carla.TrafficLightState.Yellow:
+            # 黄灯时，如果距离较远则减速，否则通过
+            if distance < 15.0:
+                return True, distance
+            else:
+                return False, distance
+        else:
+            return False, distance
+
+
 class SimpleController:
     """简单但可靠的控制逻辑"""
 
@@ -18,15 +91,20 @@ class SimpleController:
         self.world = world
         self.vehicle = vehicle
         self.map = world.get_map()
-        # self.target_speed = 30.0  # km/h，原速度限制
         self.target_speed = 50.0  # km/h，增加最高速度限制
         self.waypoint_distance = 5.0
         self.last_waypoint = None
-        # self.reverse_mode = False  # 倒车模式标志（未使用）
         self.manual_reverse = False  # 手动倒车标志
+        self.manual_mode = False  # 手动驾驶模式标志
+        self.manual_throttle = 0.0  # 手动油门
+        self.manual_steer = 0.0  # 手动转向
+        self.manual_brake = 0.0  # 手动刹车
+        # 交通灯检测相关
+        self.traffic_light_detector = TrafficLightDetector(world, vehicle)
+        self.stopped_at_light = False  # 是否在红绿灯前停车
 
     def get_control(self):
-        """基于路点的简单控制"""
+        """基于路点的简单控制（支持手动和自动模式）"""
         # 获取车辆状态
         location = self.vehicle.get_location()
         transform = self.vehicle.get_transform()
@@ -34,6 +112,10 @@ class SimpleController:
 
         # 计算速度（考虑倒车方向）
         speed = math.sqrt(velocity.x ** 2 + velocity.y ** 2) * 3.6  # km/h
+
+        # 手动驾驶模式：返回手动控制值
+        if self.manual_mode:
+            return self.manual_throttle, self.manual_brake, self.manual_steer, self.manual_reverse
 
         # 检查是否在倒车模式
         if self.manual_reverse:
@@ -83,6 +165,24 @@ class SimpleController:
             throttle, brake = 0.0, 0.3
         else:
             throttle, brake = 0.3, 0.0
+
+        # 交通灯检测（仅在自动驾驶模式下生效）
+        should_stop, distance = self.traffic_light_detector.should_stop()
+        if should_stop and distance < 15.0:  # 只在距离交通灯15米内才开始停车
+            if speed > 5.0:
+                # 需要减速
+                throttle = 0.0
+                brake = 0.5
+            else:
+                # 已经停止
+                throttle = 0.0
+                brake = 1.0
+                if not self.stopped_at_light:
+                    print(f"红灯停车，距离交通灯 {distance:.1f} 米")
+                    self.stopped_at_light = True
+        else:
+            # 绿灯或无交通灯，或距离较远，重置停车标志
+            self.stopped_at_light = False
 
         # return throttle, brake, steer  # 原返回值（3个值）
         return throttle, brake, steer, False  # 新返回值（4个值，增加reverse标志）
@@ -396,6 +496,8 @@ class SimpleDrivingSystem:
         print("  r - 重置当前车辆")
         print("  s - 紧急停止")
         print("  x - 切换倒车/前进模式（速度为0时生效）")
+        print("  m - 切换手动/自动驾驶模式")
+        print("  j/k - 手动驾驶控制（仅在手动模式下，前进/倒车）")
         for i in range(len(self.vehicles)):
             if i == 0:
                 print(f"  1 - 切换到主车辆视角（红色特斯拉）")
@@ -444,9 +546,9 @@ class SimpleDrivingSystem:
                 )
                 self.vehicle.apply_control(control)
 
-                # NPC车辆使用内置自动驾驶（自动避开障碍物）
+                # NPC车辆使用CARLA内置自动驾驶（自动处理交通灯）
                 for i in range(1, len(self.vehicles)):
-                    self.vehicles[i].set_autopilot(True, 16)  # 16 = ARLA_AUTOPILIT_IGNORE_ALL
+                    self.vehicles[i].set_autopilot(True, 8)  # 8 = 自动处理交通灯
 
                 # 更新显示
                 if self.camera_image is not None:
@@ -471,11 +573,17 @@ class SimpleDrivingSystem:
                                 (20, 150), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.6, (255, 255, 255), 2)
 
+                    # 显示手动驾驶模式状态
+                    if self.current_vehicle_index == 0 and self.controller.manual_mode:
+                            cv2.putText(display_img, "MANUAL MODE",
+                                        (20, 210), cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.6, (0, 255, 255), 2)
+
                     # 显示倒车状态
                     if self.current_vehicle_index == 0 and self.controller.manual_reverse:
                             cv2.putText(display_img, "REVERSE MODE",
-                                        (20, 240), cv2.FONT_HERSHEY_SIMPLEX,
-                                        0.8, (0, 0, 255), 2)
+                                        (20, 180), cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.6, (0, 0, 255), 2)
 
                     cv2.imshow('Autonomous Driving - Multi-Vehicle View', display_img)
 
@@ -501,6 +609,28 @@ class SimpleDrivingSystem:
                         print("只有主车辆可以切换倒车模式")
                     else:
                         print("请先减速到接近停止（速度<1km/h）再切换倒车模式")
+                elif key == ord('m') or key == ord('M'):
+                    # 切换手动/自动驾驶模式（只对主车辆生效）
+                    if self.current_vehicle_index == 0:
+                        self.controller.manual_mode = not self.controller.manual_mode
+                        if self.controller.manual_mode:
+                            print("已切换到手动驾驶模式 - 使用J前进/K倒车")
+                        else:
+                            print("已切换到自动驾驶模式")
+                    else:
+                        print("只有主车辆可以切换手动/自动驾驶模式")
+                elif key == ord('j') or key == ord('J'):
+                    # 手动前进（只对主车辆生效，且在手动模式下）
+                    if self.current_vehicle_index == 0:
+                        if self.controller.manual_mode:
+                            self.controller.manual_throttle = min(1.0, self.controller.manual_throttle + 0.1)
+                            self.controller.manual_reverse = False  # 前进模式
+                elif key == ord('k') or key == ord('K'):
+                    # 手动倒车（只对主车辆生效，且在手动模式下）
+                    if self.current_vehicle_index == 0:
+                        if self.controller.manual_mode:
+                            self.controller.manual_throttle = min(0.5, self.controller.manual_throttle + 0.1)
+                            self.controller.manual_reverse = True  # 倒车模式
                 elif ord('1') <= key <= ord('9'):
                     # 动态切换车辆视角（按数字键1-9）
                     vehicle_index = key - ord('1')
@@ -509,6 +639,13 @@ class SimpleDrivingSystem:
                         self.update_current_vehicle_view()
                     else:
                         print(f"车辆 {vehicle_index + 1} 不存在")
+                else:
+                    # 松开按键时自动减速（只在手动模式下）
+                    if self.current_vehicle_index == 0 and self.controller.manual_mode:
+                        if self.controller.manual_throttle > 0:
+                            self.controller.manual_throttle = max(0.0, self.controller.manual_throttle - 0.05)
+                        elif self.controller.manual_throttle < 0:
+                            self.controller.manual_throttle = min(0.0, self.controller.manual_throttle + 0.05)
 
                 frame_count += 1
 
