@@ -11,10 +11,106 @@ from collections import deque
 import random
 
 
+class TrafficLightDetector:
+    """交通灯检测器 - 检测前方交通灯状态"""
+
+    def __init__(self, world, vehicle):
+        self.world = world
+        self.vehicle = vehicle
+        self.map = world.get_map()
+        self.stopped_at_light = False  # 停车标志
+
+    def should_stop(self):
+        """检测是否应该停车（只在行驶方向所在车道的红灯时）"""
+        location = self.vehicle.get_location()
+        transform = self.vehicle.get_transform()
+        velocity = self.vehicle.get_velocity()
+        speed = math.sqrt(velocity.x ** 2 + velocity.y ** 2) * 3.6  # km/h
+
+        # 获取车辆当前道路的行驶方向（更精确）
+        waypoint = self.map.get_waypoint(location, project_to_road=True)
+        if waypoint:
+            # 使用道路的行驶方向（考虑道路是单向还是双向）
+            road_forward = waypoint.transform.get_forward_vector()
+            road_lane_id = waypoint.road_id  # 获取道路ID
+            road_lane = waypoint.lane_id  # 获取车道ID（区分左/右车道）
+        else:
+            # 如果找不到路点，使用车辆朝向
+            road_forward = transform.get_forward_vector()
+            road_lane_id = None
+            road_lane = None
+
+        # 获取车辆前方的交通灯
+        lights = self.world.get_actors().filter('traffic.traffic_light*')
+
+        if not lights:
+            return False, float('inf')
+
+        closest_red_light = None
+        closest_distance = float('inf')
+
+        # 检测前方的交通灯
+        for light in lights:
+            light_location = light.get_location()
+
+            # 计算距离
+            distance = location.distance(light_location)
+
+            # 只检测40米范围内的交通灯
+            if distance > 40.0:
+                continue
+
+            # 计算交通灯相对于车辆的位置
+            to_light = carla.Vector3D(
+                light_location.x - location.x,
+                light_location.y - location.y,
+                light_location.z - location.z
+            )
+
+            # 检查交通灯是否在车辆行驶方向的前方
+            # 使用道路行驶方向而不是车辆朝向
+            dot = road_forward.x * to_light.x + road_forward.y * to_light.y
+
+            if dot > 0:  # 在行驶方向前方
+                # 检查交通灯状态
+                state = light.get_state()
+
+                if state == carla.TrafficLightState.Red:
+                    # 检查交通灯是否在同一个车道
+                    light_waypoint = self.map.get_waypoint(light_location, project_to_road=True)
+                    if light_waypoint and road_lane_id is not None:
+                        # 只检测同一道路上的交通灯
+                        if light_waypoint.road_id == road_lane_id:
+                            if distance < closest_distance:
+                                closest_distance = distance
+                                closest_red_light = light
+                    else:
+                        # 如果无法获取交通灯所在道路，使用原逻辑
+                        if distance < closest_distance:
+                            closest_distance = distance
+                            closest_red_light = light
+                elif state == carla.TrafficLightState.Yellow:
+                    # 黄灯时根据距离决定是否停车
+                    light_waypoint = self.map.get_waypoint(light_location, project_to_road=True)
+                    if light_waypoint and road_lane_id is not None:
+                        if light_waypoint.road_id == road_lane_id and distance < 15.0 and distance < closest_distance:
+                            closest_distance = distance
+                            closest_red_light = light
+                    else:
+                        if distance < 15.0 and distance < closest_distance:
+                            closest_distance = distance
+                            closest_red_light = light
+
+        if closest_red_light:
+            return True, closest_distance
+
+        return False, float('inf')
+
+
 class SimpleController:
     """简单但可靠的控制逻辑"""
 
-    def __init__(self, world, vehicle):
+    def __init__(self, world, vehicle, is_main_vehicle=False):
         self.world = world
         self.vehicle = vehicle
         self.map = world.get_map()
@@ -26,6 +122,8 @@ class SimpleController:
         self.manual_throttle = 0.0  # 手动油门
         self.manual_steer = 0.0  # 手动转向
         self.manual_brake = 0.0  # 手动刹车
+        self.is_main_vehicle = is_main_vehicle  # 是否是主车辆
+        self.traffic_light_detector = TrafficLightDetector(world, vehicle)
 
     def get_control(self):
         """基于路点的简单控制（支持手动和自动模式）"""
@@ -90,6 +188,25 @@ class SimpleController:
         else:
             throttle, brake = 0.3, 0.0
 
+        # 交通灯检测（仅对主车辆生效）
+        if self.is_main_vehicle:
+            should_stop, distance = self.traffic_light_detector.should_stop()
+            if should_stop and distance < 15.0:  # 只在距离交通灯15米内才开始停车
+                if speed > 5.0:
+                    # 需要减速
+                    throttle = 0.0
+                    brake = 0.5
+                else:
+                    # 已经停止
+                    throttle = 0.0
+                    brake = 1.0
+                    if not self.traffic_light_detector.stopped_at_light:
+                        print(f"红灯停车，距离交通灯 {distance:.1f} 米")
+                        self.traffic_light_detector.stopped_at_light = True
+            else:
+                # 绿灯或无交通灯，或距离较远，重置停车标志
+                self.traffic_light_detector.stopped_at_light = False
+
         # return throttle, brake, steer  # 原返回值（3个值）
         return throttle, brake, steer, False  # 新返回值（4个值，增加reverse标志）
 
@@ -113,6 +230,48 @@ class SimpleDrivingSystem:
         self.cameras = {}  # 存储多个相机
         self.controller = None
         self.camera_image = None
+        self.night_mode = False  # 夜晚模式标志
+
+    def set_weather(self, day=True):
+        """设置天气"""
+        if day:
+            weather = carla.WeatherParameters(
+                cloudiness=30.0,
+                precipitation=0.0,
+                sun_altitude_angle=70.0
+            )
+        else:
+            weather = carla.WeatherParameters(
+                cloudiness=0.0,
+                precipitation=0.0,
+                sun_altitude_angle=-90.0  # 夜晚
+            )
+        self.world.set_weather(weather)
+
+    def toggle_night_mode(self):
+        """切换夜晚模式"""
+        self.night_mode = not self.night_mode
+        self.set_weather(day=not self.night_mode)
+
+        if self.night_mode:
+            print("已切换到夜晚模式 - 已开启近光灯")
+            self.set_headlights(True)
+        else:
+            print("已切换到白天模式 - 已关闭近光灯")
+            self.set_headlights(False)
+
+    def set_headlights(self, enabled):
+        """设置所有车辆的近光灯"""
+        for vehicle in self.vehicles:
+            if vehicle is not None and vehicle.is_alive:
+                try:
+                    light_state = carla.VehicleLightState.LowBeam
+                    if enabled:
+                        vehicle.set_light_state(light_state)
+                    else:
+                        vehicle.set_light_state(carla.VehicleLightState.NONE)
+                except:
+                    pass
 
     def connect(self):
         """连接到CARLA服务器"""
@@ -339,7 +498,7 @@ class SimpleDrivingSystem:
 
     def setup_controller(self):
         """设置控制器"""
-        self.controller = SimpleController(self.world, self.vehicle)
+        self.controller = SimpleController(self.world, self.vehicle, is_main_vehicle=True)
         print("控制器设置完成")
 
     def setup_all_controllers(self):
@@ -348,7 +507,7 @@ class SimpleDrivingSystem:
         self.controllers = []
 
         for i, vehicle in enumerate(self.vehicles):
-            controller = SimpleController(self.world, vehicle)
+            controller = SimpleController(self.world, vehicle, is_main_vehicle=(i == 0))
             self.controllers.append(controller)
             vehicle_name = "主车辆" if i == 0 else f"NPC车辆{i}"
             print(f"  {vehicle_name} 控制器设置完成")
@@ -378,13 +537,8 @@ class SimpleDrivingSystem:
         print("系统初始化中...")
         time.sleep(2.0)
 
-        # 设置天气
-        weather = carla.WeatherParameters(
-            cloudiness=30.0,
-            precipitation=0.0,
-            sun_altitude_angle=70.0
-        )
-        self.world.set_weather(weather)
+        # 设置天气（默认白天）
+        self.set_weather(day=True)
 
         # 生成2辆NPC车辆（加上主车辆共3辆特斯拉）
         npc_vehicles = self.spawn_npc_vehicles(2)
@@ -404,6 +558,7 @@ class SimpleDrivingSystem:
         print("  x - 切换倒车/前进模式（速度为0时生效）")
         print("  m - 切换手动/自动驾驶模式")
         print("  j/k - 手动驾驶控制（仅在手动模式下，前进/倒车）")
+        print("  l - 切换夜晚/白天模式（夜晚时开启近光灯）")
         for i in range(len(self.vehicles)):
             if i == 0:
                 print(f"  1 - 切换到主车辆视角（红色特斯拉）")
@@ -451,10 +606,6 @@ class SimpleDrivingSystem:
                     reverse=reverse
                 )
                 self.vehicle.apply_control(control)
-
-                # NPC车辆使用内置自动驾驶（自动避开障碍物）
-                for i in range(1, len(self.vehicles)):
-                    self.vehicles[i].set_autopilot(True, 16)  # 16 = ARLA_AUTOPILIT_IGNORE_ALL
 
                 # 更新显示
                 if self.camera_image is not None:
@@ -525,6 +676,9 @@ class SimpleDrivingSystem:
                             print("已切换到自动驾驶模式")
                     else:
                         print("只有主车辆可以切换手动/自动驾驶模式")
+                elif key == ord('l') or key == ord('L'):
+                    # 切换夜晚模式
+                    self.toggle_night_mode()
                 elif key == ord('j') or key == ord('J'):
                     # 手动前进（只对主车辆生效，且在手动模式下）
                     if self.current_vehicle_index == 0:
@@ -579,11 +733,26 @@ class SimpleDrivingSystem:
             # 获取主车辆当前位置
             main_location = self.vehicle.get_location()
 
-            # 筛选出距离主车辆较远的出生点（至少80米）
+            # 筛选出距离主车辆较远的出生点（至少100米）
             far_spawn_points = [
                 sp for sp in spawn_points
-                if sp.location.distance(main_location) > 80.0
+                if sp.location.distance(main_location) > 100.0
             ]
+
+            # 如果找到的出生点不够，使用间隔更远的
+            if len(far_spawn_points) < count:
+                # 重新筛选，使用间隔至少20米的出生点
+                far_spawn_points = []
+                for sp in spawn_points:
+                    if sp.location.distance(main_location) > 60.0:
+                        # 检查是否与已选出生点间隔足够
+                        too_close = False
+                        for existing_sp in far_spawn_points:
+                            if sp.location.distance(existing_sp.location) < 20.0:
+                                too_close = True
+                                break
+                        if not too_close:
+                            far_spawn_points.append(sp)
 
             if not far_spawn_points:
                 far_spawn_points = spawn_points
@@ -592,8 +761,8 @@ class SimpleDrivingSystem:
 
             # 生成指定数量的特斯拉车辆
             for i in range(count):
-                # 使用不同的出生点
-                spawn_index = i % len(far_spawn_points)
+                # 使用间隔更大的出生点
+                spawn_index = i * 5 % len(far_spawn_points)
 
                 try:
                     # 使用特斯拉Model3蓝图
@@ -663,9 +832,26 @@ class SimpleDrivingSystem:
 
         spawn_points = self.world.get_map().get_spawn_points()
         if spawn_points:
-            new_spawn_point = random.choice(spawn_points)
+            # 选择一个距离当前位置较远的出生点
+            current_location = current_vehicle.get_location()
+            far_spawn_points = [
+                sp for sp in spawn_points
+                if sp.location.distance(current_location) > 50.0
+            ]
+            if far_spawn_points:
+                new_spawn_point = random.choice(far_spawn_points)
+            else:
+                new_spawn_point = random.choice(spawn_points)
+
             current_vehicle.set_transform(new_spawn_point)
             print(f"{vehicle_label}已重置到新位置: {new_spawn_point.location}")
+
+            # 如果是主车辆，重置控制器状态
+            if self.current_vehicle_index == 0:
+                self.controllers[0].last_waypoint = None
+            # 如果是NPC车辆，重新设置自动驾驶
+            else:
+                current_vehicle.set_autopilot(True, 16)
 
             # 等待重置完成
             time.sleep(0.5)
