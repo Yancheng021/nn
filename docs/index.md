@@ -80,6 +80,8 @@ title: 主页
 
 [__Carla YOLO规划器__](carla_yolo_planner.md) - Carla环境结合YOLO的自动驾驶路径规划方案
 
+[__CARLA多视角自动驾驶仿真__](./car_navigation_system/readme.md) - 基于CARLA的多视角自动驾驶仿真系统
+
 [__人形机器人SAC强化学习步态优化__](./mujoco_running/running.md) - 基于CPG+PD+SAC残差强化学习的缓步稳定行走仿真
 
 [__人形机器人自主行走__](./mujoco_hci_sim/README.md) - 基于PPO强化学习的Humanoid人形机器人自主行走仿真
