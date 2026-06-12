@@ -46,6 +46,7 @@ copyright: OpenHUTB 版权所有 &copy; {year}
 
 nav:
 - 首页: 'index.md'
+<<<<<<< HEAD
 - 车道线检测: 'lane_detection/README.md'
 - CarRacing DQN/DoubleDQN：训练改进与可视化对比: 'car_racing_dqn_improvements.md'
 - 自动驾驶感知系统: 'carla_yolo_detection/README.md'
@@ -53,6 +54,10 @@ nav:
 - 双足人形机器人SAC步态仿真: 'mujoco_running\running.md'
 - 人形机器人项目: mujoco_hci_sim/README.md
 - CARLA多视角自动驾驶仿真: 'car_navigation_system/readme.md'
+=======
+- CARLA自动驾驶仿真系统: 'car_navigation_system/readme.md'
+
+>>>>>>> 16361c303b202ac5fd2ba248b788df95e2426e20
 
 # - mdx_math 用于行内公式显示
 markdown_extensions:
