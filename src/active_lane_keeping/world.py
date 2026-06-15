@@ -127,15 +127,16 @@ class World():
         if self.collision_sensor is not None:
             self.collision_sensor.destroy()
 
-    def reset(self) -> tuple[float, float, np.ndarray, bool]:
+    def reset(self) -> tuple[float, float, np.ndarray, bool, float]:
         """Resets the Actors
 
         Returns:
-            tuple[float, float, np.ndarray, bool]:
+            tuple[float, float, np.ndarray, bool, float]:
                 [0]: Difference to the center of the detected lane.
                 [1]: Detected surface area.
                 [2]: Image consisting including the detected surface area.
                 [3]: Whether a collision has been detected.
+                [4]: Current vehicle speed in m/s.
         """
         self.image_queue = queue.Queue()
         self.close()
@@ -154,8 +155,7 @@ class World():
         self.sensor.listen(self.image_queue.put)
 
         # Spawn collision sensor
-        blueprint = self.world.get_blueprint_library() \
-            .find('sensor.other.collision')
+        blueprint = self.blueprint_library.find('sensor.other.collision')
         self.collision_sensor = self.world.spawn_actor(blueprint,
             carla.Transform(), attach_to=self.vehicle)
         self.collision_detected = False
@@ -169,24 +169,37 @@ class World():
         """
         self.collision_detected = True
 
-    def _change_to_left_lane(self) -> tuple[float, float, np.ndarray, bool]:
+    def _change_to_left_lane(self) -> tuple[float, float, np.ndarray, bool, float]:
         """Hard Code to make the Car start in the leftmost Lane
 
         Returns:
-            tuple[float, float, np.ndarray, bool]:
+            tuple[float, float, np.ndarray, bool, float]:
                 [0]: Difference to the center of the detected lane.
                 [1]: Detected surface area.
                 [2]: Image consisting including the detected surface area.
                 [3]: Whether a collision has been detected.
+                [4]: Current vehicle speed in m/s.
         """
         for throttle, steer, steps in [
             (0.2, -0.11, 850), (0.2, 0.17, 250), (-0.2, 0.17, 50)]:
             for _ in range(steps):
-                error, detection_surface_area, transformed_image, _ = self.step(
+                error, detection_surface_area, transformed_image, _, _ = self.step(
                     throttle=throttle, steer=steer)
 
         return error, detection_surface_area, transformed_image, \
-            self.collision_detected
+            self.collision_detected, self._get_vehicle_speed()
+    
+    def _get_vehicle_speed(self) -> float:
+        """Get the current vehicle speed in m/s.
+        
+        Returns:
+            float: Vehicle speed in m/s.
+        """
+        if self.vehicle is None:
+            return 0.0
+        velocity = self.vehicle.get_velocity()
+        speed = np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
+        return speed
 
     def get_image(self) -> np.ndarray:
         """Retrieve the Image in RGB
@@ -211,7 +224,7 @@ class World():
         cv2.waitKey(1)
 
     def step(self, show:bool=True, throttle:float=0,
-        steer:float=0) -> tuple[float, float, np.ndarray, bool]:
+        steer:float=0) -> tuple[float, float, np.ndarray, bool, float]:
         """Simulate one Step
 
         Args:
@@ -224,11 +237,12 @@ class World():
             Exception: Requires the reset method to be called before step.
 
         Returns:
-            tuple[float, float, np.ndarray, bool]:
+            tuple[float, float, np.ndarray, bool, float]:
                 [0]: Difference to the center of the detected lane.
                 [1]: Detected surface area.
                 [2]: Image consisting including the detected surface area.
                 [3]: Whether a collision has been detected.
+                [4]: Current vehicle speed in m/s.
         """
 
         if not self.initialized:
@@ -240,9 +254,10 @@ class World():
         image = self.get_image()
         transformed_image, error, detection_surface_area = self.lane \
             .pipe(img=image)
+        speed = self._get_vehicle_speed()
 
         if show:
             World.show_image(image=transformed_image)
             
         return error, detection_surface_area, transformed_image, \
-            self.collision_detected
+            self.collision_detected, speed

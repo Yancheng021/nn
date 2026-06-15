@@ -69,7 +69,7 @@ def run(run_id:str, path:str, world:World, agent:Agent, steps:int = 1000,
             [0]: Sum of errors as returned by the world.
             [1]: Number of steps taken.
     """
-    error, detection_surface_area, _, _ = world.reset()
+    error, detection_surface_area, _, _, _ = world.reset()
 
     if save:
         recorder = Recorder(folder=path)
@@ -77,7 +77,7 @@ def run(run_id:str, path:str, world:World, agent:Agent, steps:int = 1000,
 
     for i in range(steps):
         steer, throttle = agent.get_actions(detection_surface_area, error)
-        error, detection_surface_area, img, collision_detected = world.step(
+        error, detection_surface_area, img, collision_detected, speed = world.step(
             steer=steer, throttle=throttle)
         agent.show_error()
 
@@ -312,8 +312,10 @@ if __name__ == '__main__':
     parser.add_argument('-id', '--identifier', type=str, help=('Unique '
         'identifier used to identify the run.'), dest='id', required=True)
     parser.add_argument('-c', '--controller', default=None, type=str,
-        choices=['simple', 'p', 'pd', 'pid'], help=('The method used to '
-        'control the car. If not specified, uses default from config.'), dest='controller')
+        choices=['simple', 'p', 'pd', 'pid', 'pid_gs', 'mpc'], help=('The method used to '
+        'control the car. If not specified, uses default from config. '
+        'Options: simple, p, pd, pid, pid_gs (gain scheduling), mpc (model predictive control)'),
+        dest='controller')
     parser.add_argument('-s', '--steps', type=int, help=('The '
         'number of steps that the agent controls the car. This does not '
         'include the inital setup driving to the fourth lane.'), dest='steps')

@@ -78,6 +78,29 @@ AEB_FULL_BRAKING_DISTANCE = 15.0
 AEB_PARTIAL_DECEL = -3.0
 AEB_FULL_DECEL = -6.0
 
+# ============ 模型轻量化配置 ============
+# 剪枝参数
+PRUNING_ENABLED = True
+PRUNING_RATIO = 0.3
+PRUNING_THRESHOLD = None
+
+# 量化参数
+QUANTIZATION_ENABLED = True
+QUANTIZATION_TYPE = "dynamic"
+
+# 知识蒸馏参数
+DISTILLATION_ENABLED = False
+DISTILLATION_TEMPERATURE = 3.0
+DISTILLATION_ALPHA = 0.7
+
+# 模型导出参数
+EXPORT_FORMAT = "pytorch"
+MODEL_SAVE_PATH = "models/optimized_acc_model.pt"
+
+# 性能目标
+TARGET_MODEL_SIZE_MB = 1.0
+TARGET_INFERENCE_TIME_MS = 10.0
+
 # ============ 其他配置 ============
 HUTB_ENABLED = True
 HUTB_HOST = "localhost"

@@ -109,6 +109,8 @@ title: 主页
 
 [__PilotNet自动驾驶系统__](./pilotnet/index.md) - 基于NVIDIA PilotNet架构的端到端自动驾驶学习系统
 
+[__自动驾驶车道检测与路径规划仿真平台__](./driveSim-enhanced/README.md)
+
 
 [__用户使用手势控制 Airsim 无人机__](./drone_hand_gesture/README.md) - 使用手势识别控制 Airsim 无人机飞行
 
