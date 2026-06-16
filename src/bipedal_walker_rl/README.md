@@ -106,7 +106,10 @@ python run.py --task eval --mode normal --model-path models/ppo_bipedalwalker.zi
 
  bipedal_walker_rl_run
 =======
+ bipedal_walker_rl_run
+=======
 bipedal_walker_rl_run
+ main
  main
 ### Benchmark a pair of trained models
 ```bash
@@ -115,11 +118,14 @@ python benchmark.py --normal-model-path models/ppo_bipedalwalker --hardcore-mode
 
 Benchmark 输出结果将保存到 `reports/benchmark_results.csv` 和 `reports/benchmark_report.md`，并且可选记录评估视频到 `reports/videos/`。
 
+ bipedal_walker_rl_run
+=======
 bipedal_walker_rl_run
 =======
 =======
 main
 main
+ main
 ### 3.2 observe_model()
 
 The observe_model() function loads a trained PPO model and evaluates it in the specified environment. It automatically checks if VecNormalize and VecFrameStack were used during training and applies them accordingly.
@@ -202,6 +208,32 @@ Dependencies include:
 	•	stable-baselines3 for the PPO implementation
 	•	pandas and matplotlib for log analysis and visualizations
 
-## 8. Credits
+## 8. Model Comparison
+
+新增 `compare_models.py` 工具，用于对多个已训练的 PPO 模型进行对比评估，并生成 CSV、Markdown 报告和对比柱状图。
+
+### 用法示例
+
+```bash
+python compare_models.py --model-paths models/ppo_bipedalwalker models/ppo_bipedalwalker_hardcore --labels normal hardcore --mode normal --eval-episodes 5
+```
+
+### 可选参数
+
+- `--model-paths`: 至少两个模型路径，用空格分隔。
+- `--labels`: 与模型路径对应的标签。
+- `--mode`: `normal` 或 `hardcore`。
+- `--eval-episodes`: 评估轮数。
+- `--output-dir`: 报告输出目录，默认 `comparison_reports`。
+- `--record-video`: 是否录制评估视频。
+- `--video-folder`: 视频保存目录，默认 `comparison_reports/videos`。
+
+### 输出内容
+
+- `comparison_reports/comparison_results.csv`
+- `comparison_reports/comparison_report.md`
+- `comparison_reports/comparison_plot.png`
+
+## 9. Credits
 
 This project is based on the work of Oleg Klimov, adapted for PPO training using Stable Baselines3.

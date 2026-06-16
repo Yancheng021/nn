@@ -27,6 +27,14 @@ lane_detection:
   canny_high: 150               # Canny边缘检测高阈值
   max_lost_frames: 5            # 最大连续丢失帧数（使用历史数据预测）
 
+# Performance Optimization Settings (性能优化)
+performance:
+  use_gpu: false                # 启用GPU加速（需要CUDA支持的OpenCV）
+  use_parallel: true            # 启用并行处理（多线程）
+  use_incremental: true         # 启用增量更新（利用前帧结果）
+  time_budget_ms: 40.0          # 每帧最大处理时间（毫秒，25FPS目标）
+  enable_profiling: false       # 启用性能分析（FPS统计、耗时分析）
+
 # Controller Settings (自适应控制器优化)
 controller:
   default_controller: "pid_gs"  # simple, p, pd, pid, pid_gs, mpc

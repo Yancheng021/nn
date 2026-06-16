@@ -7,289 +7,299 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass
+import torch.nn.utils.prune as prune
+from typing import Dict, List, Optional, Tuple, Any, Union
+from dataclasses import dataclass, field
 import time
 import os
 
 
 @dataclass
 class ModelInfo:
-    """模型信息"""
     name: str
     parameters: int
+    trainable_params: int
     size_mb: float
     layers: int
-    trainable_params: int
+    flops: Optional[int] = None
+    memory_usage_mb: Optional[float] = None
 
 
 @dataclass
 class OptimizationResult:
-    """优化结果"""
     original_size: float
     optimized_size: float
     compression_ratio: float
     speedup: float
     accuracy_loss: float
     method: str
+    params_reduction: int = 0
+    flops_reduction: Optional[int] = None
+
+
+@dataclass
+class PruningConfig:
+    enabled: bool = True
+    ratio: float = 0.3
+    threshold: Optional[float] = None
+    method: str = "weight"
+    layer_ratios: Dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class QuantizationConfig:
+    enabled: bool = True
+    type: str = "dynamic"
+    dtype: torch.dtype = torch.qint8
+    backend: str = "fbgemm"
+
+
+@dataclass
+class DistillationConfig:
+    enabled: bool = False
+    temperature: float = 3.0
+    alpha: float = 0.7
+    epochs: int = 10
+    learning_rate: float = 0.001
+
+
+@dataclass
+class OptimizationConfig:
+    pruning: PruningConfig = field(default_factory=PruningConfig)
+    quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
+    distillation: DistillationConfig = field(default_factory=DistillationConfig)
+
+
+class FLOPCalculator:
+    @staticmethod
+    def calculate_flops(model: nn.Module, input_shape: Tuple[int, ...]) -> int:
+        """计算模型的浮点运算次数"""
+        flops = 0
+        dummy_input = torch.randn(*input_shape)
+
+        def hook(module, input, output):
+            nonlocal flops
+            if isinstance(module, nn.Linear):
+                in_features = input[0].shape[-1]
+                out_features = output.shape[-1]
+                flops += in_features * out_features * input[0].shape[0]
+            elif isinstance(module, nn.Conv2d):
+                in_channels = module.in_channels
+                out_channels = module.out_channels
+                kernel_size = module.kernel_size[0]
+                output_size = output.shape[2] * output.shape[3]
+                flops += in_channels * out_channels * kernel_size * kernel_size * output_size * input[0].shape[0]
+
+        handles = []
+        for module in model.modules():
+            if isinstance(module, (nn.Linear, nn.Conv2d)):
+                handles.append(module.register_forward_hook(hook))
+
+        with torch.no_grad():
+            model(dummy_input)
+
+        for h in handles:
+            h.remove()
+
+        return flops
 
 
 class ModelProfiler:
-    """
-    模型性能分析器
-    分析模型的参数量、大小、推理速度等
-    """
-
     def __init__(self):
-        """初始化模型分析器"""
         self.results: Dict[str, Any] = {}
+        self.flop_calculator = FLOPCalculator()
 
-    def profile_model(self, model: nn.Module, model_name: str = "model") -> ModelInfo:
-        """
-        分析模型信息
-
-        Args:
-            model: PyTorch模型
-            model_name: 模型名称
-
-        Returns:
-            ModelInfo: 模型信息
-        """
-        # 计算参数数量
+    def profile_model(self, model: nn.Module, model_name: str = "model",
+                      input_shape: Optional[Tuple[int, ...]] = None) -> ModelInfo:
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-        # 计算模型大小（MB）
         param_size = sum(p.numel() * p.element_size() for p in model.parameters())
         buffer_size = sum(b.numel() * b.element_size() for b in model.buffers())
         total_size = (param_size + buffer_size) / (1024 * 1024)
 
-        # 计算层数
         num_layers = len(list(model.modules()))
+
+        flops = None
+        if input_shape is not None:
+            flops = self.flop_calculator.calculate_flops(model, input_shape)
 
         return ModelInfo(
             name=model_name,
             parameters=total_params,
+            trainable_params=trainable_params,
             size_mb=total_size,
             layers=num_layers,
-            trainable_params=trainable_params
+            flops=flops
         )
 
-    def measure_inference_time(self,
-                               model: nn.Module,
-                               input_shape: Tuple[int, ...],
-                               num_runs: int = 100,
-                               device: str = "cpu") -> Dict[str, float]:
-        """
-        测量推理时间
-
-        Args:
-            model: PyTorch模型
-            input_shape: 输入形状
-            num_runs: 运行次数
-            device: 设备类型
-
-        Returns:
-            推理时间统计
-        """
+    def measure_inference_time(self, model: nn.Module, input_shape: Tuple[int, ...],
+                              num_runs: int = 100, device: str = "cpu") -> Dict[str, float]:
         model = model.to(device)
         model.eval()
 
-        # 创建随机输入
         dummy_input = torch.randn(*input_shape).to(device)
 
-        # 预热
         with torch.no_grad():
             for _ in range(10):
                 _ = model(dummy_input)
 
-        # 测量时间
         times = []
         with torch.no_grad():
             for _ in range(num_runs):
-                start = time.time()
+                start = time.perf_counter()
                 _ = model(dummy_input)
-                end = time.time()
+                end = time.perf_counter()
                 times.append(end - start)
 
-        # 统计
         mean_time = np.mean(times)
         std_time = np.std(times)
-        min_time = np.min(times)
-        max_time = np.max(times)
 
         return {
             'mean_ms': mean_time * 1000,
             'std_ms': std_time * 1000,
-            'min_ms': min_time * 1000,
-            'max_ms': max_time * 1000,
-            'fps': 1.0 / mean_time
+            'min_ms': np.min(times) * 1000,
+            'max_ms': np.max(times) * 1000,
+            'fps': 1.0 / mean_time,
+            'latency_ms': mean_time * 1000
         }
 
-    def compare_models(self,
-                      original: nn.Module,
-                      optimized: nn.Module,
-                      input_shape: Tuple[int, ...]) -> Dict[str, Any]:
-        """
-        对比原始模型和优化模型
+    def compare_models(self, original: nn.Module, optimized: nn.Module,
+                       input_shape: Tuple[int, ...]) -> Dict[str, Any]:
+        original_info = self.profile_model(original, "original", input_shape)
+        optimized_info = self.profile_model(optimized, "optimized", input_shape)
 
-        Args:
-            original: 原始模型
-            optimized: 优化模型
-            input_shape: 输入形状
-
-        Returns:
-            对比结果
-        """
-        # 分析模型信息
-        original_info = self.profile_model(original, "original")
-        optimized_info = self.profile_model(optimized, "optimized")
-
-        # 测量推理时间
         original_time = self.measure_inference_time(original, input_shape)
         optimized_time = self.measure_inference_time(optimized, input_shape)
 
-        # 计算改进
-        size_reduction = (1 - optimized_info.size_mb / original_info.size_mb) * 100
-        speedup = original_time['mean_ms'] / optimized_time['mean_ms']
+        size_reduction = (1 - optimized_info.size_mb / max(original_info.size_mb, 0.001)) * 100
+        speedup = original_time['mean_ms'] / max(optimized_time['mean_ms'], 0.001)
 
         return {
             'original': {
                 'params': original_info.parameters,
                 'size_mb': original_info.size_mb,
-                'inference_ms': original_time['mean_ms']
+                'flops': original_info.flops,
+                'inference_ms': original_time['mean_ms'],
+                'fps': original_time['fps']
             },
             'optimized': {
                 'params': optimized_info.parameters,
                 'size_mb': optimized_info.size_mb,
-                'inference_ms': optimized_time['mean_ms']
+                'flops': optimized_info.flops,
+                'inference_ms': optimized_time['mean_ms'],
+                'fps': optimized_time['fps']
             },
             'improvement': {
                 'size_reduction_percent': size_reduction,
                 'speedup': speedup,
-                'params_reduction': original_info.parameters - optimized_info.parameters
+                'params_reduction': original_info.parameters - optimized_info.parameters,
+                'flops_reduction': (original_info.flops - optimized_info.flops) if original_info.flops else None
             }
         }
 
     def print_profile(self, model_info: ModelInfo):
-        """打印模型信息"""
         print("\n" + "=" * 60)
         print(f"模型分析: {model_info.name}")
         print("=" * 60)
         print(f"总参数量: {model_info.parameters:,}")
         print(f"可训练参数: {model_info.trainable_params:,}")
-        print(f"模型大小: {model_info.size_mb:.2f} MB")
+        print(f"模型大小: {model_info.size_mb:.4f} MB")
         print(f"层数: {model_info.layers}")
+        if model_info.flops:
+            print(f"FLOPs: {model_info.flops:,}")
         print("=" * 60)
 
 
 class ModelPruner:
-    """
-    模型剪枝器
-    实现权重剪枝和结构化剪枝
-    """
+    def __init__(self, config: Optional[PruningConfig] = None):
+        self.config = config or PruningConfig()
 
-    def __init__(self, pruning_ratio: float = 0.3):
-        """
-        初始化剪枝器
-
-        Args:
-            pruning_ratio: 剪枝比例（0-1）
-        """
-        self.pruning_ratio = pruning_ratio
-
-    def weight_pruning(self,
-                       model: nn.Module,
-                       threshold: Optional[float] = None) -> nn.Module:
-        """
-        权重剪枝（非结构化剪枝）
-        将小于阈值的权重置零
-
-        Args:
-            model: PyTorch模型
-            threshold: 剪枝阈值，如果为None则根据比例计算
-
-        Returns:
-            剪枝后的模型
-        """
-        # 创建模型副本
+    def weight_pruning(self, model: nn.Module, threshold: Optional[float] = None) -> nn.Module:
         pruned_model = model
 
-        for name, param in pruned_model.named_parameters():
-            if param.dim() > 1:  # 只剪枝权重，不剪枝bias
-                # 计算阈值
+        for name, module in pruned_model.named_modules():
+            if isinstance(module, (nn.Linear, nn.Conv2d)):
                 if threshold is None:
-                    abs_weights = torch.abs(param.data)
-                    sorted_weights = torch.sort(abs_weights.view(-1))[0]
-                    threshold_index = int(len(sorted_weights) * self.pruning_ratio)
-                    threshold = sorted_weights[threshold_index].item()
-
-                # 剪枝
-                mask = torch.abs(param.data) > threshold
-                param.data.mul_(mask.float())
+                    ratio = self.config.layer_ratios.get(name, self.config.ratio)
+                    prune.l1_unstructured(module, name='weight', amount=ratio)
+                else:
+                    mask = torch.abs(module.weight.data) > threshold
+                    prune.custom_from_mask(module, name='weight', mask=mask.float())
 
         return pruned_model
 
-    def structured_pruning(self,
-                          model: nn.Module,
-                          layer_pruning_ratios: Optional[Dict[str, float]] = None) -> nn.Module:
-        """
-        结构化剪枝
-        剪枝整个神经元或卷积核
-
-        Args:
-            model: PyTorch模型
-            layer_pruning_ratios: 各层的剪枝比例
-
-        Returns:
-            剪枝后的模型
-        """
-        if layer_pruning_ratios is None:
-            layer_pruning_ratios = {}
-
+    def structured_pruning(self, model: nn.Module) -> nn.Module:
         for name, module in model.named_modules():
             if isinstance(module, nn.Linear):
-                ratio = layer_pruning_ratios.get(name, self.pruning_ratio)
-                # 剪枝神经元
+                ratio = self.config.layer_ratios.get(name, self.config.ratio)
                 num_neurons = module.out_features
                 num_to_prune = int(num_neurons * ratio)
 
-                # 计算神经元重要性（基于权重绝对值之和）
                 importance = torch.sum(torch.abs(module.weight.data), dim=1)
                 _, indices = torch.sort(importance)
                 prune_indices = indices[:num_to_prune]
 
-                # 置零
-                module.weight.data[prune_indices] = 0
+                keep_mask = torch.ones(module.weight.data.shape[0], dtype=torch.bool)
+                keep_mask[prune_indices] = False
+                prune.custom_from_mask(module, name='weight', mask=keep_mask.unsqueeze(1).expand_as(module.weight.data))
+
                 if module.bias is not None:
-                    module.bias.data[prune_indices] = 0
+                    bias_mask = keep_mask.clone()
+                    prune.custom_from_mask(module, name='bias', mask=bias_mask)
 
             elif isinstance(module, nn.Conv2d):
-                ratio = layer_pruning_ratios.get(name, self.pruning_ratio)
-                # 剪枝卷积核
+                ratio = self.config.layer_ratios.get(name, self.config.ratio)
                 num_filters = module.out_channels
                 num_to_prune = int(num_filters * ratio)
 
-                # 计算卷积核重要性
                 importance = torch.sum(torch.abs(module.weight.data), dim=(1, 2, 3))
                 _, indices = torch.sort(importance)
                 prune_indices = indices[:num_to_prune]
 
-                # 置零
-                module.weight.data[prune_indices] = 0
+                keep_mask = torch.ones(module.weight.data.shape[0], dtype=torch.bool)
+                keep_mask[prune_indices] = False
+                prune.custom_from_mask(module, name='weight', mask=keep_mask.unsqueeze(1).unsqueeze(2).unsqueeze(3).expand_as(module.weight.data))
 
         return model
 
+    def channel_pruning(self, model: nn.Module) -> nn.Module:
+        for name, module in model.named_modules():
+            if isinstance(module, nn.Conv2d):
+                ratio = self.config.layer_ratios.get(name, self.config.ratio)
+                num_channels = module.in_channels
+                num_to_prune = int(num_channels * ratio)
+
+                importance = torch.sum(torch.abs(module.weight.data), dim=(0, 2, 3))
+                _, indices = torch.sort(importance)
+                prune_indices = indices[:num_to_prune]
+
+                keep_mask = torch.ones(module.weight.data.shape[1], dtype=torch.bool)
+                keep_mask[prune_indices] = False
+                prune.custom_from_mask(module, name='weight', mask=keep_mask.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand_as(module.weight.data))
+
+        return model
+
+    def prune(self, model: nn.Module) -> nn.Module:
+        if self.config.method == "weight":
+            return self.weight_pruning(model, self.config.threshold)
+        elif self.config.method == "structured":
+            return self.structured_pruning(model)
+        elif self.config.method == "channel":
+            return self.channel_pruning(model)
+        else:
+            raise ValueError(f"Unknown pruning method: {self.config.method}")
+
+    def remove_pruning(self, model: nn.Module) -> nn.Module:
+        for module in model.modules():
+            try:
+                prune.remove(module, 'weight')
+                prune.remove(module, 'bias')
+            except (AttributeError, ValueError):
+                continue
+        return model
+
     def get_pruning_statistics(self, model: nn.Module) -> Dict[str, float]:
-        """
-        获取剪枝统计信息
-
-        Args:
-            model: PyTorch模型
-
-        Returns:
-            统计信息
-        """
         total_params = 0
         zero_params = 0
 
@@ -297,7 +307,7 @@ class ModelPruner:
             total_params += param.numel()
             zero_params += (param.data == 0).sum().item()
 
-        sparsity = zero_params / total_params * 100
+        sparsity = zero_params / max(total_params, 1) * 100
 
         return {
             'total_params': total_params,
@@ -308,178 +318,96 @@ class ModelPruner:
 
 
 class ModelQuantizer:
-    """
-    模型量化器
-    实现动态量化和静态量化
-    """
-
-    def __init__(self, quantization_type: str = "dynamic"):
-        """
-        初始化量化器
-
-        Args:
-            quantization_type: 量化类型 ('dynamic', 'static')
-        """
-        self.quantization_type = quantization_type
+    def __init__(self, config: Optional[QuantizationConfig] = None):
+        self.config = config or QuantizationConfig()
 
     def dynamic_quantization(self, model: nn.Module) -> nn.Module:
-        """
-        动态量化
-        在推理时动态量化权重和激活
-
-        Args:
-            model: PyTorch模型
-
-        Returns:
-            量化后的模型
-        """
-        # 应用动态量化
         quantized_model = torch.quantization.quantize_dynamic(
             model,
             {nn.Linear, nn.Conv2d},
-            dtype=torch.qint8
+            dtype=self.config.dtype
         )
         return quantized_model
 
-    def static_quantization(self,
-                           model: nn.Module,
+    def static_quantization(self, model: nn.Module,
                            calibration_data: Optional[torch.Tensor] = None) -> nn.Module:
-        """
-        静态量化
-        需要校准数据来确定量化参数
-
-        Args:
-            model: PyTorch模型
-            calibration_data: 校准数据
-
-        Returns:
-            量化后的模型
-        """
-        # 准备量化
         model.eval()
-        model.qconfig = torch.quantization.get_default_qconfig('fbgemm')
-        torch.quantization.prepare(model, inplace=True)
+        model.qconfig = torch.quantization.get_default_qconfig(self.config.backend)
+        prepared_model = torch.quantization.prepare(model)
 
-        # 校准
         if calibration_data is not None:
             with torch.no_grad():
-                model(calibration_data)
+                if isinstance(calibration_data, list):
+                    for data in calibration_data:
+                        prepared_model(data)
+                else:
+                    prepared_model(calibration_data)
 
-        # 转换为量化模型
-        torch.quantization.convert(model, inplace=True)
+        quantized_model = torch.quantization.convert(prepared_model)
+        return quantized_model
 
-        return model
-
-    def quantize_model(self,
-                      model: nn.Module,
+    def quantize_model(self, model: nn.Module,
                       calibration_data: Optional[torch.Tensor] = None) -> nn.Module:
-        """
-        量化模型
-
-        Args:
-            model: PyTorch模型
-            calibration_data: 校准数据（仅用于静态量化）
-
-        Returns:
-            量化后的模型
-        """
-        if self.quantization_type == "dynamic":
+        if self.config.type == "dynamic":
             return self.dynamic_quantization(model)
-        elif self.quantization_type == "static":
+        elif self.config.type == "static":
             return self.static_quantization(model, calibration_data)
         else:
-            raise ValueError(f"Unknown quantization type: {self.quantization_type}")
+            raise ValueError(f"Unknown quantization type: {self.config.type}")
 
 
 class KnowledgeDistiller:
-    """
-    知识蒸馏器
-    从大模型（教师）向小模型（学生）转移知识
-    """
+    def __init__(self, config: Optional[DistillationConfig] = None):
+        self.config = config or DistillationConfig()
 
-    def __init__(self,
-                 temperature: float = 3.0,
-                 alpha: float = 0.7):
-        """
-        初始化知识蒸馏器
-
-        Args:
-            temperature: 温度参数，用于软化输出
-            alpha: 软标签损失的权重
-        """
-        self.temperature = temperature
-        self.alpha = alpha
-
-    def distillation_loss(self,
-                         student_output: torch.Tensor,
+    def distillation_loss(self, student_output: torch.Tensor,
                          teacher_output: torch.Tensor,
                          labels: torch.Tensor) -> torch.Tensor:
-        """
-        计算蒸馏损失
-
-        Args:
-            student_output: 学生模型输出
-            teacher_output: 教师模型输出
-            labels: 真实标签
-
-        Returns:
-            蒸馏损失
-        """
-        # 软标签损失（KL散度）
-        soft_teacher = torch.softmax(teacher_output / self.temperature, dim=1)
-        soft_student = torch.log_softmax(student_output / self.temperature, dim=1)
+        soft_teacher = torch.softmax(teacher_output / self.config.temperature, dim=1)
+        soft_student = torch.log_softmax(student_output / self.config.temperature, dim=1)
         soft_loss = torch.nn.functional.kl_div(
             soft_student, soft_teacher, reduction='batchmean'
-        ) * (self.temperature ** 2)
+        ) * (self.config.temperature ** 2)
 
-        # 硬标签损失
-        hard_loss = torch.nn.functional.cross_entropy(student_output, labels)
+        if labels.dim() > 1:
+            hard_loss = torch.nn.functional.mse_loss(student_output, labels)
+        else:
+            hard_loss = torch.nn.functional.cross_entropy(student_output, labels)
 
-        # 综合损失
-        total_loss = self.alpha * soft_loss + (1 - self.alpha) * hard_loss
+        total_loss = self.config.alpha * soft_loss + (1 - self.config.alpha) * hard_loss
 
         return total_loss
 
-    def distill(self,
-               teacher_model: nn.Module,
-               student_model: nn.Module,
-               train_loader: Any,
-               epochs: int = 10,
-               learning_rate: float = 0.001) -> nn.Module:
-        """
-        执行知识蒸馏
+    def intermediate_distillation_loss(self, student_features: List[torch.Tensor],
+                                      teacher_features: List[torch.Tensor]) -> torch.Tensor:
+        total_loss = 0.0
+        for s_feat, t_feat in zip(student_features, teacher_features):
+            total_loss += torch.nn.functional.mse_loss(s_feat, t_feat.detach())
+        return total_loss / len(student_features)
 
-        Args:
-            teacher_model: 教师模型
-            student_model: 学生模型
-            train_loader: 训练数据加载器
-            epochs: 训练轮数
-            learning_rate: 学习率
+    def distill(self, teacher_model: nn.Module, student_model: nn.Module,
+               train_loader: Any, epochs: int = None,
+               learning_rate: float = None) -> nn.Module:
+        epochs = epochs or self.config.epochs
+        learning_rate = learning_rate or self.config.learning_rate
 
-        Returns:
-            训练后的学生模型
-        """
         teacher_model.eval()
         student_model.train()
 
         optimizer = torch.optim.Adam(student_model.parameters(), lr=learning_rate)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
         for epoch in range(epochs):
-            total_loss = 0
+            total_loss = 0.0
             num_batches = 0
 
-            for batch_idx, (data, labels) in enumerate(train_loader):
-                # 教师模型预测
+            for data, labels in train_loader:
                 with torch.no_grad():
                     teacher_output = teacher_model(data)
 
-                # 学生模型预测
                 student_output = student_model(data)
-
-                # 计算蒸馏损失
                 loss = self.distillation_loss(student_output, teacher_output, labels)
 
-                # 反向传播
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -487,95 +415,81 @@ class KnowledgeDistiller:
                 total_loss += loss.item()
                 num_batches += 1
 
+            scheduler.step()
             avg_loss = total_loss / num_batches
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}")
 
         return student_model
 
 
 class ModelOptimizer:
-    """
-    模型优化器
-    综合使用剪枝、量化、蒸馏等技术优化模型
-    """
-
-    def __init__(self):
-        """初始化模型优化器"""
+    def __init__(self, config: Optional[OptimizationConfig] = None):
+        self.config = config or OptimizationConfig()
         self.profiler = ModelProfiler()
-        self.pruner = ModelPruner()
-        self.quantizer = ModelQuantizer()
-        self.distiller = KnowledgeDistiller()
+        self.pruner = ModelPruner(self.config.pruning)
+        self.quantizer = ModelQuantizer(self.config.quantization)
+        self.distiller = KnowledgeDistiller(self.config.distillation)
 
-    def optimize_pipeline(self,
-                         model: nn.Module,
-                         optimization_config: Dict[str, Any]) -> Tuple[nn.Module, OptimizationResult]:
-        """
-        优化流水线
-
-        Args:
-            model: PyTorch模型
-            optimization_config: 优化配置
-
-        Returns:
-            (优化后的模型, 优化结果)
-        """
-        original_info = self.profiler.profile_model(model, "original")
+    def optimize_pipeline(self, model: nn.Module,
+                         input_shape: Tuple[int, ...],
+                         calibration_data: Optional[torch.Tensor] = None,
+                         distillation_loader: Optional[Any] = None,
+                         teacher_model: Optional[nn.Module] = None) -> Tuple[nn.Module, OptimizationResult]:
+        original_info = self.profiler.profile_model(model, "original", input_shape)
 
         optimized_model = model
 
-        # 1. 剪枝
-        if optimization_config.get('pruning', False):
-            pruning_ratio = optimization_config.get('pruning_ratio', 0.3)
-            self.pruner.pruning_ratio = pruning_ratio
-            optimized_model = self.pruner.weight_pruning(optimized_model)
-            print(f"剪枝完成，比例: {pruning_ratio}")
+        if self.config.distillation.enabled and teacher_model and distillation_loader:
+            optimized_model = self.distiller.distill(
+                teacher_model, optimized_model, distillation_loader
+            )
+            print(f"知识蒸馏完成，epochs: {self.config.distillation.epochs}")
 
-        # 2. 量化
-        if optimization_config.get('quantization', False):
-            quantization_type = optimization_config.get('quantization_type', 'dynamic')
-            self.quantizer.quantization_type = quantization_type
-            optimized_model = self.quantizer.quantize_model(optimized_model)
-            print(f"量化完成，类型: {quantization_type}")
+        if self.config.pruning.enabled:
+            optimized_model = self.pruner.prune(optimized_model)
+            optimized_model = self.pruner.remove_pruning(optimized_model)
+            print(f"剪枝完成，方法: {self.config.pruning.method}, 比例: {self.config.pruning.ratio}")
 
-        optimized_info = self.profiler.profile_model(optimized_model, "optimized")
+        if self.config.quantization.enabled:
+            optimized_model = self.quantizer.quantize_model(optimized_model, calibration_data)
+            print(f"量化完成，类型: {self.config.quantization.type}")
 
-        # 计算优化结果
+        optimized_info = self.profiler.profile_model(optimized_model, "optimized", input_shape)
+
         compression_ratio = original_info.size_mb / max(optimized_info.size_mb, 0.001)
-        size_reduction = (1 - optimized_info.size_mb / max(original_info.size_mb, 0.001)) * 100
+
+        original_time = self.profiler.measure_inference_time(model, input_shape)
+        optimized_time = self.profiler.measure_inference_time(optimized_model, input_shape)
+        speedup = original_time['mean_ms'] / max(optimized_time['mean_ms'], 0.001)
 
         result = OptimizationResult(
             original_size=original_info.size_mb,
             optimized_size=optimized_info.size_mb,
             compression_ratio=compression_ratio,
-            speedup=1.0,  # 需要实际测量
-            accuracy_loss=0.0,  # 需要实际评估
-            method=str(optimization_config)
+            speedup=speedup,
+            accuracy_loss=0.0,
+            method=f"pruning={self.config.pruning.enabled},quantization={self.config.quantization.enabled},distillation={self.config.distillation.enabled}",
+            params_reduction=original_info.parameters - optimized_info.parameters
         )
 
         return optimized_model, result
 
-    def save_optimized_model(self,
-                            model: nn.Module,
-                            path: str,
+    def save_optimized_model(self, model: nn.Module, path: str,
                             format: str = "pytorch"):
-        """
-        保存优化后的模型
-
-        Args:
-            model: PyTorch模型
-            path: 保存路径
-            format: 保存格式 ('pytorch', 'onnx', 'torchscript')
-        """
         if format == "pytorch":
             torch.save(model.state_dict(), path)
         elif format == "torchscript":
             scripted_model = torch.jit.script(model)
             scripted_model.save(path)
         elif format == "onnx":
-            # 需要输入示例
-            dummy_input = torch.randn(1, 5)  # ACC模型的输入维度
+            dummy_input = torch.randn(1, 5)
             torch.onnx.export(model, dummy_input, path)
         else:
             raise ValueError(f"Unknown format: {format}")
 
         print(f"模型已保存到: {path}")
+
+    def load_optimized_model(self, model: nn.Module, path: str) -> nn.Module:
+        model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
+        print(f"模型已从: {path} 加载")
+        return model

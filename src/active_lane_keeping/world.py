@@ -17,7 +17,9 @@ class World():
         image_width:int=640, fov:int=110,
         time_difference:float=0.01, x_offset:float=2.5, z_offset:float=0.7,
         use_adaptive_threshold:bool=True, use_edge_detection:bool=True,
-        canny_low:int=50, canny_high:int=150) -> None:
+        canny_low:int=50, canny_high:int=150,
+        use_gpu:bool=False, use_parallel:bool=True, use_incremental:bool=True,
+        time_budget_ms:float=40.0, enable_profiling:bool=False) -> None:
         """Constructor
 
         Args:
@@ -49,6 +51,11 @@ class World():
                 Defaults to 50.
             canny_high (int, optional): Upper threshold for Canny edge detection.
                 Defaults to 150.
+            use_gpu (bool, optional): Enable GPU acceleration. Defaults to False.
+            use_parallel (bool, optional): Enable parallel processing. Defaults to True.
+            use_incremental (bool, optional): Enable incremental update. Defaults to True.
+            time_budget_ms (float, optional): Max time per frame in ms. Defaults to 40.0.
+            enable_profiling (bool, optional): Enable performance profiling. Defaults to False.
         """
 
         self.image_height = image_height
@@ -59,7 +66,10 @@ class World():
         self.lane = Lane(height=self.image_height, width=self.image_width,
             use_adaptive_threshold=use_adaptive_threshold,
             use_edge_detection=use_edge_detection,
-            canny_low=canny_low, canny_high=canny_high)
+            canny_low=canny_low, canny_high=canny_high,
+            use_gpu=use_gpu, use_parallel=use_parallel,
+            use_incremental=use_incremental, time_budget_ms=time_budget_ms,
+            enable_profiling=enable_profiling)
 
         self.fov = fov
         self.client = carla.Client(server_ip, port)
@@ -90,7 +100,7 @@ class World():
 
         Args:
             config (dict): Configuration dictionary containing connection,
-                simulation, camera, and lane detection settings.
+                simulation, camera, lane detection, and performance settings.
 
         Returns:
             World: A new World instance configured according to the provided config.
@@ -99,6 +109,7 @@ class World():
         sim = config.get('simulation', {})
         cam = config.get('camera', {})
         lane_det = config.get('lane_detection', {})
+        perf = config.get('performance', {})
 
         return cls(
             server_ip=conn.get('server_ip', '127.0.0.1'),
@@ -114,7 +125,12 @@ class World():
             use_adaptive_threshold=lane_det.get('use_adaptive_threshold', True),
             use_edge_detection=lane_det.get('use_edge_detection', True),
             canny_low=lane_det.get('canny_low', 50),
-            canny_high=lane_det.get('canny_high', 150)
+            canny_high=lane_det.get('canny_high', 150),
+            use_gpu=perf.get('use_gpu', False),
+            use_parallel=perf.get('use_parallel', True),
+            use_incremental=perf.get('use_incremental', True),
+            time_budget_ms=perf.get('time_budget_ms', 40.0),
+            enable_profiling=perf.get('enable_profiling', False)
         )
 
     def close(self) -> None:
