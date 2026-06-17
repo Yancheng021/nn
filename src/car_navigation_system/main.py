@@ -107,7 +107,6 @@ class SimpleDrivingSystem:
         self.cameras = {}  # 存储多个相机
         self.controller = None
         self.camera_image = None
-<<<<<<< HEAD
         self.current_view = 'third_person'  # 当前视角模式：'first_person', 'third_person', 'birdseye'
         self.current_map = 'Town01'  # 当前地图
         self.available_maps = ['Town01', 'Town02', 'Town03', 'Town04', 'Town05', 'Town06', 'Town07']  # 可用地图列表
@@ -388,8 +387,6 @@ class SimpleDrivingSystem:
         except Exception as e:
             print(f"绘制AR导航时出错: {e}")
             return display_img
-=======
->>>>>>> 16361c303b202ac5fd2ba248b788df95e2426e20
 
     def connect(self):
         """连接到CARLA服务器"""
@@ -1084,7 +1081,6 @@ class SimpleDrivingSystem:
         print("  r - 重置当前车辆")
         print("  s - 紧急停止")
         print("  x - 切换倒车/前进模式（速度为0时生效）")
-<<<<<<< HEAD
         print("  v - 切换视角（第一人称/第三人称/鸟瞰图）")
         print("  m - 切换地图（Town01/Town02/Town03等）")
         print("  w - 切换天气（晴天/雨天/多云/湿滑）")
@@ -1097,21 +1093,9 @@ class SimpleDrivingSystem:
         print("  p - 保存当前画面截图")
         print("\n开始自动驾驶...\n")
 
-        # 创建显示窗口
         cv2.namedWindow('Autonomous Driving - Simple Version', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Autonomous Driving - Simple Version', 640, 480)
+        cv2.resizeWindow('Autonomous Driving - Simple Version', 640, 480)       
         cv2.moveWindow('Autonomous Driving - Simple Version', 100, 100)
-=======
-        for i in range(len(self.vehicles)):
-            if i == 0:
-                print(f"  1 - 切换到主车辆视角（红色特斯拉）")
-            else:
-                print(f"  {i+1} - 切换到NPC车辆{i}视角")
-        print("\n开始自动驾驶...\n")
-
-        # 为所有车辆创建相机
-        self.setup_all_vehicles_cameras()
->>>>>>> 16361c303b202ac5fd2ba248b788df95e2426e20
 
         frame_count = 0
         running = True
@@ -1175,7 +1159,6 @@ class SimpleDrivingSystem:
                                 (20, 120), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.6, (255, 255, 255), 2)
                     cv2.putText(display_img, f"Frame: {frame_count}",
-<<<<<<< HEAD
                                 (20, 160), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.8, (255, 255, 255), 2)
                     
@@ -1246,21 +1229,8 @@ class SimpleDrivingSystem:
                         display_img = self.draw_ar_navigation(display_img)
 
                     cv2.imshow('Autonomous Driving - Simple Version', display_img)
-                    # 确保窗口置顶显示
                     cv2.setWindowProperty('Autonomous Driving - Simple Version', cv2.WND_PROP_TOPMOST, 1)
                     cv2.setWindowProperty('Autonomous Driving - Simple Version', cv2.WND_PROP_TOPMOST, 0)
-=======
-                                (20, 150), cv2.FONT_HERSHEY_SIMPLEX,
-                                0.6, (255, 255, 255), 2)
-
-                    # 显示倒车状态
-                    if self.current_vehicle_index == 0 and self.controller.manual_reverse:
-                            cv2.putText(display_img, "REVERSE MODE",
-                                        (20, 240), cv2.FONT_HERSHEY_SIMPLEX,
-                                        0.8, (0, 0, 255), 2)
-
-                    cv2.imshow('Autonomous Driving - Multi-Vehicle View', display_img)
->>>>>>> 16361c303b202ac5fd2ba248b788df95e2426e20
 
                 # 处理按键
                 key = cv2.waitKey(1) & 0xFF
@@ -1283,8 +1253,7 @@ class SimpleDrivingSystem:
                     elif self.current_vehicle_index != 0:
                         print("只有主车辆可以切换倒车模式")
                     else:
-                        print("请先减速到接近停止（速度<1km/h）再切换倒车模式")
-<<<<<<< HEAD
+                        print("请先减速到接近停止（速度<1km/h）再切换倒车模式") 
                 elif key == ord('v'):
                     # 切换视角模式
                     view_modes = ['third_person', 'first_person', 'birdseye']
@@ -1337,16 +1306,6 @@ class SimpleDrivingSystem:
                         print("AR导航已开启")
                     else:
                         print("AR导航已关闭")
-=======
-                elif ord('1') <= key <= ord('9'):
-                    # 动态切换车辆视角（按数字键1-9）
-                    vehicle_index = key - ord('1')
-                    if vehicle_index < len(self.vehicles):
-                        self.current_vehicle_index = vehicle_index
-                        self.update_current_vehicle_view()
-                    else:
-                        print(f"车辆 {vehicle_index + 1} 不存在")
->>>>>>> 16361c303b202ac5fd2ba248b788df95e2426e20
 
                 frame_count += 1
 

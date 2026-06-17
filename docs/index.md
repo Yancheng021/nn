@@ -73,6 +73,7 @@ title: 主页
 
 
 [__YOLO数据生成器__](./carla-yolo-dataset-generator/README.md)
+- [__CARLA多视角自动驾驶仿真__](./car_guidance_system/readme.md) - 基于CARLA的多视角自动驾驶仿真系统
 ## 规划 <span id="planning"></span>
 
 [__导航__](#navigation)
