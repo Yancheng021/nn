@@ -3,9 +3,9 @@
 <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://wengqiuyi.github.io/nn/car_navigation_system/readme/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="canonical" href="https://wengqiuyi.github.io/nn/car_guidance_system/readme/" />
       <link rel="shortcut icon" href="../../img/favicon.ico" />
-    <title>CARLA多视角自动驾驶仿真 - 神经网络</title>
+    <title>基于 CARLA 的多视角自动驾驶仿真系统文档 - 神经网络</title>
     <link rel="stylesheet" href="../../css/theme.css" />
     <link rel="stylesheet" href="../../css/theme_extra.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
@@ -13,9 +13,9 @@
     
       <script>
         // Current page data
-        var mkdocs_page_name = "CARLA\u591a\u89c6\u89d2\u81ea\u52a8\u9a7e\u9a76\u4eff\u771f";
-        var mkdocs_page_input_path = "car_navigation_system/readme.md";
-        var mkdocs_page_url = "/nn/car_navigation_system/readme/";
+        var mkdocs_page_name = "\u57fa\u4e8e CARLA \u7684\u591a\u89c6\u89d2\u81ea\u52a8\u9a7e\u9a76\u4eff\u771f\u7cfb\u7edf\u6587\u6863";
+        var mkdocs_page_input_path = "car_guidance_system/readme.md";
+        var mkdocs_page_url = "/nn/car_guidance_system/readme/";
       </script>
     
     <!--[if lt IE 9]>
@@ -88,112 +88,8 @@
                 <li class="toctree-l1"><a class="reference internal" href="../../carla_multisensor_platform/carla_multisensor_platform/">CARLA多传感器自动驾驶仿真平台</a>
                 </li>
               </ul>
-              <ul class="current">
-                <li class="toctree-l1 current"><a class="reference internal current" href="#">CARLA多视角自动驾驶仿真</a>
-    <ul class="current">
-    <li class="toctree-l2"><a class="reference internal" href="#1">1. 项目概述</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#11">1.1 项目简介</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#12">1.2 项目整体流程</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#13">1.3 项目组成</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#14">1.4 核心技术特点</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#15">1.5 运行环境与使用方式</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#16">1.6 项目核心目标</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#2">2. 项目背景与问题定义</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#21">2.1 项目背景</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#22">2.2 现存痛点</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#23">2.3 项目建设目标</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#3">3. 核心技术栈与理论基础</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#31">3.1 核心技术栈</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#32-carla">3.2 仿真层：CARLA 核心能力</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#33-simplecontroller">3.3 控制层：路点循迹控制器 SimpleController</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#34-opencv">3.4 可视化层：OpenCV 图像渲染</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#35">3.5 场景控制模块</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#36">3.6 工程化核心机制</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#4">4. 系统整体架构</a>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#5">5. 系统功能优化点</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#51">5.1 优化一：多相机解耦设计</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#52">5.2 优化二：车辆生成容错与冲突处理</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#53">5.3 优化三：倒车模式安全限制</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#54">5.4 优化四：分层可视化渲染</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#55">5.5 优化五：昼夜与灯光联动</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#56">5.6 优化六：一键截图自动命名</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#57-npc">5.7 优化七：NPC 车流仿真</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#58">5.8 优化八：状态实时文字提示</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#59">5.9 优化九：紧急制动与车辆重置</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#6">6. 核心技术难点与解决方案</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#61">6.1 难点一：车辆局部坐标转换，转向偏差大</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#62">6.2 难点二：多传感器资源泄露</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#63">6.3 难点三：路点采样异常导致车辆停驶</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#64">6.4 难点四：图像回调线程冲突</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#65">6.5 难点五：拓扑地图坐标映射错位</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#7">7. 系统运行说明</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#71">7.1 运行环境</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#72">7.2 全局按键对照表</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#73">7.3 运行效果说明</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#8">8. 现存不足与后续优化方向</a>
-        <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#81">8.1 现存不足</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#82">8.2 后续优化与拓展方向</a>
-    </li>
-        </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#9">9. 项目总结</a>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#_1">附录：常见问题排查</a>
-    </li>
-    </ul>
+              <ul>
+                <li class="toctree-l1"><a class="" href="../../car_navigation_system/readme.md">CARLA多视角自动驾驶仿真</a>
                 </li>
               </ul>
       </div>
@@ -210,9 +106,9 @@
         <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
   <ul class="wy-breadcrumbs">
     <li><a href="../.." class="icon icon-home" aria-label="Docs"></a></li>
-      <li class="breadcrumb-item active">CARLA多视角自动驾驶仿真</li>
+      <li class="breadcrumb-item active">基于 CARLA 的多视角自动驾驶仿真系统文档</li>
     <li class="wy-breadcrumbs-aside">
-          <a href="https://github.com/OpenHUTB/nn/edit/main/docs/car_navigation_system/readme.md" class="icon icon-github"> 在 GitHub 上编辑</a>
+          <a href="https://github.com/OpenHUTB/nn/edit/main/docs/car_guidance_system/readme.md" class="icon icon-github"> 在 GitHub 上编辑</a>
     </li>
   </ul>
   <hr/>
@@ -469,17 +365,14 @@ throttle(0~1)、brake(0~1)、steer(-1~1)、reverse(布尔)、hand_brake。</p>
 <li>内置 4 种基础天气：晴天、大雨、多云、湿滑路面；</li>
 <li>昼夜模式通过修改太阳高度角实现，夜间自动开启车辆近光灯，白天关闭灯光。</li>
 </ul>
-<p><img alt="天气效果1" src="../img/3.5.11.png" /></p>
 <h4 id="352">3.5.2 地图切换</h4>
 <p>支持 Town01~Town07 七款官方城镇地图，切换逻辑：
 停止相机 → 销毁车辆 → 加载新地图 → 重新生成车辆/相机/NPC → 恢复原有配置。</p>
-<p><img alt="地图效果1" src="../img/3.5.21.png" /></p>
 <h4 id="353">3.5.3 车辆自定义</h4>
 <ul>
 <li>车型切换：内置 10 款经过验证的可用车辆蓝图（特斯拉、福特、奥迪、宝马等）；</li>
 <li>颜色切换：红、蓝、绿、黄、紫等 10 种纯色车身，切换时保留当前车型。</li>
 </ul>
-<p><img alt="车辆颜色1" src="../img/3.5.31.png" /></p>
 <h3 id="36">3.6 工程化核心机制</h3>
 <h4 id="361">3.6.1 资源容错机制</h4>
 <p>车辆重复生成失败时，自动销毁场景内所有车辆，清空冲突 Actor 后重试，避免生成卡死。</p>
@@ -697,9 +590,6 @@ if not self.vehicle:
               
             </div>
           </div><footer>
-    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
-        <a href="../../carla_multisensor_platform/carla_multisensor_platform/" class="btn btn-neutral float-left" title="CARLA多传感器自动驾驶仿真平台"><span class="icon icon-circle-arrow-left"></span> 前一页</a>
-    </div>
 
   <hr/>
 
@@ -724,8 +614,6 @@ if not self.vehicle:
           <a href="https://github.com/OpenHUTB/nn" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
         </span>
     
-    
-      <span><a href="../../carla_multisensor_platform/carla_multisensor_platform/" style="color: #fcfcfc">&laquo; 前一页</a></span>
     
     
   </span>
