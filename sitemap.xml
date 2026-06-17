@@ -191,6 +191,11 @@
          <changefreq>daily</changefreq>
     </url>
     <url>
+         <loc>https://wengqiuyi.github.io/nn/carla-yolo-dataset-generator/</loc>
+         <lastmod>2026-06-17</lastmod>
+         <changefreq>daily</changefreq>
+    </url>
+    <url>
          <loc>https://wengqiuyi.github.io/nn/carla_2d_deeprl/</loc>
          <lastmod>2026-06-17</lastmod>
          <changefreq>daily</changefreq>
