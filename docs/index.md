@@ -71,6 +71,8 @@ title: 主页
 - [__car_navigation_system__](./car_navigation_system/README.md) - 多模态CARLA导航避障系统
 - [__CARLA 多传感器自动驾驶仿真平台__](./carla_multisensor_platform/carla_multisensor_platform.md) - 基于CARLA 0.9.15构建的多传感器融合自动驾驶仿真与数据采集平台
 
+
+[__YOLO数据生成器__](./carla-yolo-dataset-generator/README.md)
 ## 规划 <span id="planning"></span>
 
 [__导航__](#navigation)
@@ -136,3 +138,5 @@ title: 主页
 [__setup_tool模块汇报文档__](./setup_tool/report.md) - setup_tool 模块背景、改进内容、运行方式与效果总结
 
 [__carla自动驾驶系统辅助监视器__](./autonomous_vehicle_monitor/monitor.md) -carla自动驾驶系统辅助器
+
+[__CARLA 多车辆跟踪系统__](./carla_multi_tracking/README.md) -CARLA 多车辆跟踪系统
