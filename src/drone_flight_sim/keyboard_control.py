@@ -50,6 +50,12 @@ class KeyboardController:
         # 起飞点位置
         self.home_position = None
 
+        # ===== 新增：高度锁定功能 =====
+        self.height_locked = False          # 是否锁定高度
+        self.locked_altitude = None         # 锁定的高度值
+        self._height_thread = None          # 高度维持线程
+        self._height_running = False        # 高度维持线程运行标志
+
     def _get_direction_key(self, key):
         """获取按键对应的移动方向"""
         key_char = key.char if hasattr(key, 'char') else None
@@ -229,6 +235,10 @@ class KeyboardController:
                 names = ['慢', '中', '快', '很快', '极速']
                 print(f"🎚️ 速度档位: {key_char} ({names[self.speed_level]}) - {SPEED_LEVELS[self.speed_level]} m/s")
                 return
+            # ===== 新增：H 键切换高度锁定 =====
+            if key_char == 'h' or key_char == 'H':
+                self._toggle_height_lock()
+                return
 
             # R 键：一键返航
             if key_char == 'r' or key_char == 'R':
@@ -402,6 +412,60 @@ class KeyboardController:
         yaw = np.arctan2(siny_cosp, cosy_cosp)
     
         return pitch, roll, yaw
+    
+     # ================================================================
+    # 高度锁定功能
+    # ================================================================
+
+    def _toggle_height_lock(self):
+        """切换高度锁定状态"""
+        if not self.height_locked:
+            pos = self.drone.get_position()
+            self.locked_altitude = pos.z_val
+            self.height_locked = True
+            print(f"🔒 高度已锁定: {abs(self.locked_altitude):.1f}m")
+            self._start_height_hold()
+        else:
+            self.height_locked = False
+            self.locked_altitude = None
+            self._stop_height_hold()
+            print("🔓 高度锁定已解除")
+
+    def _start_height_hold(self):
+        """启动高度维持线程"""
+        self._height_running = True
+        self._height_thread = threading.Thread(
+            target=self._height_hold_loop,
+            daemon=True
+        )
+        self._height_thread.start()
+
+    def _stop_height_hold(self):
+        """停止高度维持线程"""
+        self._height_running = False
+        if self._height_thread and self._height_thread.is_alive():
+            self._height_thread.join(timeout=0.3)
+        self._height_thread = None
+
+    def _height_hold_loop(self):
+        """高度维持循环（在独立线程中运行）"""
+        while self._height_running and self.height_locked:
+            try:
+                pos = self.drone.get_position()
+                current_z = pos.z_val
+                target_z = self.locked_altitude
+
+                if abs(current_z - target_z) > 0.3:
+                    speed = 1.0
+                    if current_z > target_z:
+                        self.drone.client.moveByVelocityAsync(0, 0, speed, 0.2)
+                    else:
+                        self.drone.client.moveByVelocityAsync(0, 0, -speed, 0.2)
+                else:
+                    self.drone.client.moveByVelocityAsync(0, 0, 0, 0.1)
+            except Exception:
+                pass
+            time.sleep(0.1)
 
     def start(self):
         """启动键盘监听
@@ -412,11 +476,15 @@ class KeyboardController:
         listener_running = True
 
         # 创建键盘监听器
-        with keyboard.Listener(
-            on_press=self.on_press,
-            on_release=self.on_release
-        ) as listener:
-            listener.join()
+        try:
+            with keyboard.Listener(
+                on_press=self.on_press,
+                on_release=self.on_release
+            ) as listener:
+                listener.join()
+        finally:
+            # ===== 新增：退出时清理高度锁定线程 =====
+            self._stop_height_hold()
 
 
 def print_control_help():
@@ -436,6 +504,7 @@ def print_control_help():
   🎮 功能键:
      空格      : 悬停（停止移动）
      1-5       : 切换速度档位（慢/中/快/很快/极速）
+     H         : 切换高度锁定（保持当前高度）
      Y         : 显示实时遥测面板
      R         : 一键返航
      P         : 拍照
